@@ -3,121 +3,136 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Resizer</title>
+  <title>AspectFlow — Video Resizer</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="card">
+  <div class="glass-container">
     <!-- Header -->
     <header class="header">
-      <div class="title-group">
-        <h1 class="title">Video Resizer</h1>
+      <div class="brand">
+        <div class="brand-icon">⛶</div>
+        <div>
+          <h1 class="brand-title">AspectFlow</h1>
+          <span class="brand-subtitle">Smart Video Resizer</span>
+        </div>
       </div>
-      <div id="video-status-badge" class="badge badge-searching">
-        <span class="badge-dot"></span>
+      <div id="video-status-badge" class="status-pill status-searching">
+        <span class="pulse-dot"></span>
         <span id="video-status-text">Detecting...</span>
       </div>
     </header>
 
-    <!-- Detected Video Info Pill -->
+    <!-- Detected Video Info Bar -->
     <div id="video-info" class="video-info hidden">
-      <span id="info-res">1920 × 1080</span>
-      <span class="dot">•</span>
-      <span id="info-ratio">16:9</span>
-      <span class="dot">•</span>
-      <span id="info-current-mode" class="mode-tag">Original</span>
+      <div class="info-group">
+        <span class="info-icon">📺</span>
+        <span id="info-res" class="info-text">1920 × 1080</span>
+        <span class="info-dot">•</span>
+        <span id="info-ratio" class="info-tag">16:9</span>
+      </div>
+      <span id="info-current-mode" class="active-mode-pill">Original</span>
     </div>
 
-    <!-- Presets -->
-    <div class="section">
-      <div class="section-label">Aspect Presets</div>
-      <div class="preset-grid">
-        <button class="btn btn-full" data-mode="reset" id="btn-reset">
-          Original (Reset)
+    <!-- Aspect Ratio Presets -->
+    <div class="glass-section">
+      <div class="section-heading">
+        <span>Aspect Ratio Presets</span>
+      </div>
+      <div class="presets-grid">
+        <button class="glass-btn btn-reset full-span" data-mode="reset" id="btn-reset">
+          <span class="btn-title">↺ Original (Reset)</span>
         </button>
 
-        <button class="btn" data-mode="stretch" data-ratio="1.6" data-label="16:10 Stretch">
-          <span class="btn-primary-text">16:10</span>
-          <span class="btn-sub-text">Laptop Stretch</span>
+        <button class="glass-btn" data-mode="stretch" data-ratio="1.6" data-label="16:10 Stretch">
+          <span class="btn-title">16:10</span>
+          <span class="btn-desc">Laptop Screen</span>
         </button>
 
-        <button class="btn" data-mode="stretch" data-ratio="1.777777" data-label="16:9 Stretch">
-          <span class="btn-primary-text">16:9</span>
-          <span class="btn-sub-text">Standard HD</span>
+        <button class="glass-btn" data-mode="stretch" data-ratio="1.777777" data-label="16:9 Stretch">
+          <span class="btn-title">16:9</span>
+          <span class="btn-desc">Standard HD</span>
         </button>
 
-        <button class="btn" data-mode="stretch" data-ratio="2.333333" data-label="21:9 Ultrawide">
-          <span class="btn-primary-text">21:9</span>
-          <span class="btn-sub-text">Ultrawide</span>
+        <button class="glass-btn" data-mode="stretch" data-ratio="2.333333" data-label="21:9 Ultrawide">
+          <span class="btn-title">21:9</span>
+          <span class="btn-desc">Ultrawide</span>
         </button>
 
-        <button class="btn" data-mode="stretch" data-ratio="1.333333" data-label="4:3 Stretch">
-          <span class="btn-primary-text">4:3</span>
-          <span class="btn-sub-text">Classic TV</span>
+        <button class="glass-btn" data-mode="stretch" data-ratio="1.333333" data-label="4:3 Stretch">
+          <span class="btn-title">4:3</span>
+          <span class="btn-desc">Classic TV</span>
         </button>
 
-        <button class="btn" data-mode="force-fill" data-label="Fit to Screen">
-          <span class="btn-primary-text">Fit Screen</span>
-          <span class="btn-sub-text">Fill Container</span>
+        <button class="glass-btn" data-mode="force-fill" data-label="Fit to Screen">
+          <span class="btn-title">Fit Screen</span>
+          <span class="btn-desc">Fill Container</span>
         </button>
 
-        <button class="btn" data-mode="fill" data-label="Zoom Fill">
-          <span class="btn-primary-text">Zoom Fill</span>
-          <span class="btn-sub-text">Crop Bars</span>
+        <button class="glass-btn" data-mode="fill" data-label="Zoom Fill">
+          <span class="btn-title">Zoom Fill</span>
+          <span class="btn-desc">Crop Bars</span>
         </button>
       </div>
     </div>
 
-    <!-- Sliders -->
-    <div class="section sliders-card">
-      <div class="section-header">
-        <span class="section-label">Manual Stretch</span>
-        <button id="btn-reset-sliders" class="link-btn">Reset</button>
+    <!-- Fine Tuning Sliders Card -->
+    <div class="glass-card">
+      <div class="card-header">
+        <span class="card-title">Manual Stretch</span>
+        <button id="btn-reset-sliders" class="ghost-btn">Reset</button>
       </div>
 
-      <div class="slider-row">
-        <div class="slider-meta">
-          <span>Width (X)</span>
-          <span id="scale-x-val" class="slider-number">1.00x</span>
+      <div class="slider-item">
+        <div class="slider-labels">
+          <span class="slider-name">Width (X)</span>
+          <span id="scale-x-val" class="glow-value">1.00x</span>
         </div>
-        <input type="range" id="scale-x" min="0.5" max="2.5" step="0.01" value="1.00">
+        <input type="range" id="scale-x" min="0.5" max="2.5" step="0.01" value="1.00" class="neon-range">
       </div>
 
-      <div class="slider-row">
-        <div class="slider-meta">
-          <span>Height (Y)</span>
-          <span id="scale-y-val" class="slider-number">1.00x</span>
+      <div class="slider-item">
+        <div class="slider-labels">
+          <span class="slider-name">Height (Y)</span>
+          <span id="scale-y-val" class="glow-value">1.00x</span>
         </div>
-        <input type="range" id="scale-y" min="0.5" max="2.5" step="0.01" value="1.00">
+        <input type="range" id="scale-y" min="0.5" max="2.5" step="0.01" value="1.00" class="neon-range">
       </div>
 
-      <label class="checkbox-row" for="toggle-link">
+      <label class="glass-checkbox" for="toggle-link">
         <input type="checkbox" id="toggle-link">
-        <span>Lock X & Y (Uniform Zoom)</span>
+        <span class="checkbox-custom"></span>
+        <span class="checkbox-text">Lock X & Y (Uniform Zoom)</span>
       </label>
     </div>
 
-    <!-- Site Persistence -->
-    <div class="section persist-card">
-      <label class="switch-row" for="toggle-site-persist">
-        <div class="switch-text">
-          <span class="switch-title">Remember for this site</span>
-          <span id="site-domain-label" class="switch-subtitle">Auto-apply on return</span>
+    <!-- Website Persistence Card -->
+    <div class="glass-card persist-card">
+      <div class="persist-content">
+        <div class="persist-text">
+          <div class="persist-title-row">
+            <span class="persist-title">Remember for this site</span>
+            <span id="persist-badge" class="persist-status-pill hidden">Saved</span>
+          </div>
+          <span id="site-domain-label" class="persist-domain">Auto-applies across reloads & videos</span>
         </div>
-        <input type="checkbox" id="toggle-site-persist" class="toggle-switch">
-      </label>
+        <label class="glass-switch" for="toggle-site-persist">
+          <input type="checkbox" id="toggle-site-persist">
+          <span class="switch-slider"></span>
+        </label>
+      </div>
     </div>
 
     <!-- Shortcuts Footer -->
-    <details class="shortcuts">
-      <summary class="shortcuts-title">Keyboard Shortcuts</summary>
-      <div class="shortcuts-list">
-        <div class="shortcut-item"><span>Cycle Ratios</span> <kbd>Alt + R</kbd></div>
-        <div class="shortcut-item"><span>Fit to Screen</span> <kbd>Alt + W</kbd></div>
-        <div class="shortcut-item"><span>Zoom / Crop</span> <kbd>Alt + Z</kbd></div>
-        <div class="shortcut-item"><span>Reset</span> <kbd>Alt + 0</kbd></div>
-        <div class="shortcut-item"><span>Stretch Height</span> <kbd>Alt + ↑ / ↓</kbd></div>
-        <div class="shortcut-item"><span>Stretch Width</span> <kbd>Alt + ← / →</kbd></div>
+    <details class="glass-details">
+      <summary class="details-summary">⌨ Fullscreen Shortcuts</summary>
+      <div class="details-body">
+        <div class="shortcut-row"><span>Cycle Presets</span> <kbd>Alt + R</kbd></div>
+        <div class="shortcut-row"><span>Fit to Screen</span> <kbd>Alt + W</kbd></div>
+        <div class="shortcut-row"><span>Zoom / Crop</span> <kbd>Alt + Z</kbd></div>
+        <div class="shortcut-row"><span>Reset</span> <kbd>Alt + 0</kbd></div>
+        <div class="shortcut-row"><span>Stretch Height</span> <kbd>Alt + ↑ / ↓</kbd></div>
+        <div class="shortcut-row"><span>Stretch Width</span> <kbd>Alt + ← / →</kbd></div>
       </div>
     </details>
   </div>

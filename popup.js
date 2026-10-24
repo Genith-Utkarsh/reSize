@@ -1,4 +1,4 @@
-// popup.js - AspectFlow Minimal Controller
+// popup.js - AspectFlow Glassy Vibrant Controller
 
 document.addEventListener('DOMContentLoaded', async () => {
   const statusBadge = document.getElementById('video-status-badge');
@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const infoRatio = document.getElementById('info-ratio');
   const infoMode = document.getElementById('info-current-mode');
 
-  const presetButtons = document.querySelectorAll('.btn');
+  const presetButtons = document.querySelectorAll('.glass-btn');
   const scaleXInput = document.getElementById('scale-x');
   const scaleYInput = document.getElementById('scale-y');
   const scaleXVal = document.getElementById('scale-x-val');
@@ -17,11 +17,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnResetSliders = document.getElementById('btn-reset-sliders');
   const sitePersistToggle = document.getElementById('toggle-site-persist');
   const siteDomainLabel = document.getElementById('site-domain-label');
+  const persistBadge = document.getElementById('persist-badge');
 
   let activeTab = null;
   let currentDomain = '';
+  let currentState = {
+    mode: 'reset',
+    targetRatio: null,
+    scaleX: 1.0,
+    scaleY: 1.0,
+    label: 'Original'
+  };
 
-  // Get current active tab
+  // Extract active tab & domain
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs && tabs[0]) {
@@ -31,7 +39,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const urlObj = new URL(activeTab.url);
           currentDomain = urlObj.hostname;
           if (siteDomainLabel && currentDomain) {
-            siteDomainLabel.textContent = `Auto-apply on ${currentDomain}`;
+            siteDomainLabel.textContent = `Auto-applies for ${currentDomain}`;
           }
         } catch {
           currentDomain = '';
@@ -42,22 +50,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('Error querying tab:', err);
   }
 
-  // Check if page can run extensions
+  // Check supported page
   if (!activeTab || !activeTab.id || activeTab.url.startsWith('chrome://') || activeTab.url.startsWith('chrome-extension://')) {
-    setNoVideoState('Unavailable on system pages');
+    setNoVideoState('System Page (Unsupported)');
     return;
   }
 
-  // Load saved persistence state
+  // Load saved persistence state for domain
   if (currentDomain) {
-    chrome.storage.local.get([`persist_${currentDomain}`], (result) => {
-      if (result[`persist_${currentDomain}`]) {
+    const storageKey = `site_${currentDomain}`;
+    chrome.storage.local.get([storageKey], (result) => {
+      const saved = result[storageKey];
+      if (saved && saved.enabled) {
         sitePersistToggle.checked = true;
+        if (persistBadge) persistBadge.classList.remove('hidden');
+        if (saved.state) {
+          currentState = saved.state;
+          highlightPreset(currentState.mode, currentState.targetRatio);
+          if (infoMode) infoMode.textContent = currentState.label || 'Saved Ratio';
+          if (currentState.scaleX !== undefined) {
+            scaleXInput.value = currentState.scaleX;
+            scaleXVal.textContent = `${parseFloat(currentState.scaleX).toFixed(2)}x`;
+          }
+          if (currentState.scaleY !== undefined) {
+            scaleYInput.value = currentState.scaleY;
+            scaleYVal.textContent = `${parseFloat(currentState.scaleY).toFixed(2)}x`;
+          }
+        }
       }
     });
   }
 
-  // Request status from content script (with auto-injection fallback)
+  // Request status from content script
   requestTabStatus(true);
 
   async function requestTabStatus(canInjectFallback = true) {
@@ -65,7 +89,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     chrome.tabs.sendMessage(activeTab.id, { action: 'GET_STATUS' }, async (response) => {
       if (chrome.runtime.lastError) {
-        // Content script is not yet injected on this tab (e.g. tab was open before extension install)
         if (canInjectFallback && chrome.scripting) {
           try {
             await chrome.scripting.executeScript({
@@ -91,8 +114,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function setActiveVideoState(data) {
-    statusBadge.className = 'badge badge-active';
-    statusText.textContent = 'Video Connected';
+    statusBadge.className = 'status-pill status-active';
+    statusText.textContent = 'Connected';
     videoInfo.classList.remove('hidden');
 
     if (data.videoWidth && data.videoHeight) {
@@ -116,12 +139,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       scaleYVal.textContent = `${parseFloat(data.scaleY).toFixed(2)}x`;
     }
 
-    // Highlight preset
+    currentState = {
+      mode: data.currentMode || 'reset',
+      targetRatio: data.targetRatio,
+      scaleX: data.scaleX || 1.0,
+      scaleY: data.scaleY || 1.0,
+      label: data.currentLabel || 'Original'
+    };
+
     highlightPreset(data.currentMode, data.targetRatio);
   }
 
   function setNoVideoState(msg) {
-    statusBadge.className = 'badge badge-none';
+    statusBadge.className = 'status-pill status-none';
     statusText.textContent = msg;
     videoInfo.classList.add('hidden');
   }
@@ -153,6 +183,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  function saveSitePreference(state) {
+    if (!currentDomain) return;
+    const storageKey = `site_${currentDomain}`;
+    if (sitePersistToggle.checked) {
+      chrome.storage.local.set({
+        [storageKey]: {
+          enabled: true,
+          state: state
+        }
+      });
+      if (persistBadge) persistBadge.classList.remove('hidden');
+    } else {
+      chrome.storage.local.remove([storageKey]);
+      if (persistBadge) persistBadge.classList.add('hidden');
+    }
+  }
+
   // Preset Buttons Click
   presetButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -168,16 +215,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         scaleYVal.textContent = '1.00x';
       }
 
-      sendTransform({
+      currentState = {
         mode,
         targetRatio: ratio,
         label,
         scaleX: parseFloat(scaleXInput.value),
         scaleY: parseFloat(scaleYInput.value)
-      });
+      };
 
+      sendTransform(currentState);
       highlightPreset(mode, ratio);
       infoMode.textContent = label;
+
+      if (sitePersistToggle.checked) {
+        saveSitePreference(currentState);
+      }
     });
   });
 
@@ -203,12 +255,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     presetButtons.forEach((b) => b.classList.remove('active'));
     infoMode.textContent = `Custom (${sx.toFixed(2)}x, ${sy.toFixed(2)}x)`;
 
-    sendTransform({
+    currentState = {
       mode: 'custom',
       scaleX: sx,
       scaleY: sy,
       label: `Custom ${sx.toFixed(2)}x`
-    });
+    };
+
+    sendTransform(currentState);
+
+    if (sitePersistToggle.checked) {
+      saveSitePreference(currentState);
+    }
   }
 
   scaleXInput.addEventListener('input', handleSliderChange);
@@ -221,33 +279,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     scaleXVal.textContent = '1.00x';
     scaleYVal.textContent = '1.00x';
 
-    sendTransform({
+    currentState = {
       mode: 'reset',
       scaleX: 1.0,
       scaleY: 1.0,
       label: 'Original'
-    });
+    };
+
+    sendTransform(currentState);
     highlightPreset('reset', null);
     infoMode.textContent = 'Original';
+
+    if (sitePersistToggle.checked) {
+      saveSitePreference(currentState);
+    }
   });
 
-  // Remember for this website
+  // Remember for this website toggle switch
   sitePersistToggle.addEventListener('change', () => {
     if (!currentDomain) return;
     const isChecked = sitePersistToggle.checked;
+    saveSitePreference(currentState);
 
-    if (isChecked) {
-      chrome.storage.local.set({ [`persist_${currentDomain}`]: true });
+    if (activeTab && activeTab.id) {
       chrome.tabs.sendMessage(activeTab.id, {
         action: 'SET_PERSISTENCE',
-        persist: true,
-        domain: currentDomain
-      });
-    } else {
-      chrome.storage.local.remove([`persist_${currentDomain}`, `setting_${currentDomain}`]);
-      chrome.tabs.sendMessage(activeTab.id, {
-        action: 'SET_PERSISTENCE',
-        persist: false,
+        persist: isChecked,
+        state: currentState,
         domain: currentDomain
       });
     }
@@ -265,12 +323,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       (res) => {
         if (chrome.runtime.lastError) {
           console.warn('Message send error:', chrome.runtime.lastError.message);
-        } else if (res && res.status === 'applied') {
-          if (sitePersistToggle.checked && currentDomain) {
-            chrome.storage.local.set({
-              [`setting_${currentDomain}`]: payload
-            });
-          }
         }
       }
     );

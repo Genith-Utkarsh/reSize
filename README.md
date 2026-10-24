@@ -121,6 +121,7 @@ reSize/
 ├── content.js          # Video element engine, transforms, HUD notification, SPA watchers
 ├── background.js       # Manifest V3 service worker for browser-level shortcut commands
 ├── icons/              # Extension icons (16px, 32px, 48px, 128px)
+├── LICENSE             # MIT Open Source License
 └── README.md           # User manual and documentation
 ```
 

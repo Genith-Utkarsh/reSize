@@ -1,4 +1,4 @@
-// content.js - AspectFlow Clean Video Engine
+// content.js - AspectFlow Persistent & Resilient Video Engine
 
 (function () {
   'use strict';
@@ -16,6 +16,7 @@
 
   let sitePersistenceEnabled = false;
   const currentDomain = window.location.hostname;
+  const rootDomain = currentDomain.replace(/^www\./, '');
   let hudTimeout = null;
 
   // Presets cycle for Alt+R
@@ -30,24 +31,30 @@
   ];
   let cycleIndex = 0;
 
-  // Load saved preference for this domain
-  if (currentDomain && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get([`persist_${currentDomain}`, `setting_${currentDomain}`], (res) => {
-      if (res[`persist_${currentDomain}`]) {
+  // 1. Load saved preference for this website immediately on start/reload
+  function loadStoredPreference() {
+    if (!chrome.storage || !chrome.storage.local) return;
+
+    const keys = [`site_${currentDomain}`, `site_${rootDomain}`];
+    chrome.storage.local.get(keys, (res) => {
+      const saved = res[`site_${currentDomain}`] || res[`site_${rootDomain}`];
+      if (saved && saved.enabled && saved.state) {
         sitePersistenceEnabled = true;
-        if (res[`setting_${currentDomain}`]) {
-          activeState = res[`setting_${currentDomain}`];
-          setTimeout(() => applyTransform(false), 300);
-        }
+        activeState = saved.state;
+
+        // Apply repeatedly during initialization as video elements load
+        applyTransformStaged();
       }
     });
   }
+
+  loadStoredPreference();
 
   /**
    * Fail-proof detection of the primary video element
    */
   function findMainVideo() {
-    // 1. YouTube specific: the primary player video
+    // 1. YouTube specific primary player video
     const ytVideo = document.querySelector('video.html5-main-video, #movie_player video');
     if (ytVideo) return ytVideo;
 
@@ -63,23 +70,21 @@
     });
 
     if (streamVideos.length > 0) {
-      // Prioritize currently playing
       const playing = streamVideos.find(v => !v.paused && !v.ended && v.currentTime > 0);
       if (playing) return playing;
       return streamVideos[0];
     }
 
-    // 3. Any video in DOM
+    // 3. Fallback to all videos in DOM
     const allVideos = Array.from(document.querySelectorAll('video'));
     if (allVideos.length === 0) return null;
 
-    // Pick largest visible or first
     allVideos.sort((a, b) => (b.offsetWidth * b.offsetHeight) - (a.offsetWidth * a.offsetHeight));
     return allVideos[0];
   }
 
   /**
-   * Calculate scale factors safely
+   * Calculate scale factors based on video & container dimensions
    */
   function calculateScales(video, state) {
     const { mode, targetRatio, scaleX, scaleY } = state;
@@ -105,18 +110,18 @@
       let sy = 1.0;
 
       if (targetRatio > nativeRatio) {
-        // Target is wider (e.g. 21:9 from 16:9): widen horizontally
+        // Target is wider (e.g. 21:9 from 16:9): stretch horizontally
         sx = targetRatio / nativeRatio;
         sy = 1.0;
       } else {
-        // Target is taller (e.g. 16:10 from 16:9): stretch vertically to fill black bars
+        // Target is taller (e.g. 16:10 from 16:9): stretch vertically to eliminate black bars
         sx = 1.0;
         sy = nativeRatio / targetRatio;
       }
       return { sx, sy, isReset: false };
     }
 
-    // Fit to container (100% player box)
+    // Fit to Screen (100% player container box)
     if (mode === 'force-fill') {
       const player = video.closest('#movie_player, .html5-video-player, .video-player') || video.parentElement;
       if (player && player.clientWidth > 0 && player.clientHeight > 0) {
@@ -127,7 +132,6 @@
           return { sx: 1.0, sy: nativeRatio / cRatio, isReset: false };
         }
       }
-      // Fallback for 16:10 display
       return { sx: 1.0, sy: 1.1111, isReset: false };
     }
 
@@ -146,44 +150,88 @@
   }
 
   /**
-   * Apply transform to video without breaking YouTube ambient mode or causing blur
+   * Enforces the calculated transform on the video element
+   * Prevents YouTube from wiping transform during fullscreen entry/exit
+   */
+  function enforceTransform(video) {
+    if (!video) return;
+
+    if (activeState.mode === 'reset') {
+      if (video.style.transform !== '') {
+        video.style.transform = '';
+        video.style.transformOrigin = '';
+      }
+      return;
+    }
+
+    const { sx, sy } = calculateScales(video, activeState);
+    const expectedTransform = `scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
+
+    // Only set if different to avoid infinite mutation loops
+    if (video.style.transform !== expectedTransform) {
+      video.style.transformOrigin = 'center center';
+      video.style.transition = 'transform 0.15s ease-out';
+      video.style.transform = expectedTransform;
+    }
+  }
+
+  /**
+   * Apply transform to video and setup style locks
    */
   function applyTransform(showHud = false) {
     const video = findMainVideo();
     if (!video) return false;
 
-    const { sx, sy, isReset } = calculateScales(video, activeState);
+    // Attach listeners and style lock observer
+    attachVideoListeners(video);
+    createVideoStyleLock(video);
 
-    // YouTube's player already clips overflow. For other generic sites, set overflow hidden on parent
+    // Apply transform
+    enforceTransform(video);
+
+    // Generic sites parent overflow clipping
     const isYouTube = !!video.closest('#movie_player, .html5-video-player');
     if (!isYouTube && video.parentElement) {
       video.parentElement.style.overflow = 'hidden';
-    }
-
-    if (isReset) {
-      video.style.transform = '';
-      video.style.transformOrigin = '';
-      video.style.transition = 'transform 0.15s ease-out';
-    } else {
-      video.style.transformOrigin = 'center center';
-      video.style.transition = 'transform 0.15s ease-out';
-      video.style.transform = `scale(${sx.toFixed(4)}, ${sy.toFixed(4)})`;
     }
 
     if (showHud) {
       displayHud(activeState.label || activeState.mode);
     }
 
-    // Save if persistence enabled
-    if (sitePersistenceEnabled && currentDomain && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.set({ [`setting_${currentDomain}`]: activeState });
-    }
-
     return true;
   }
 
   /**
-   * Clean Solid HUD Badge (NO backdrop-filter bug, placed on outer player)
+   * Apply transform in staggered stages to catch video loading and transition phases
+   */
+  function applyTransformStaged() {
+    applyTransform(false);
+    setTimeout(() => applyTransform(false), 100);
+    setTimeout(() => applyTransform(false), 300);
+    setTimeout(() => applyTransform(false), 600);
+    setTimeout(() => applyTransform(false), 1200);
+  }
+
+  /**
+   * Style Mutation Observer on the video element
+   * When YouTube recalculates inline style on fullscreen toggle, immediately restores transform!
+   */
+  function createVideoStyleLock(video) {
+    if (!video || video.__aspectStyleObserver) return;
+
+    const observer = new MutationObserver(() => {
+      if (activeState.mode !== 'reset') {
+        enforceTransform(video);
+      }
+    });
+
+    observer.observe(video, { attributes: true, attributeFilter: ['style'] });
+    video.__aspectStyleObserver = observer;
+  }
+
+  /**
+   * Solid, crisp HUD notification badge (NO backdrop-filter, placed on outer player)
    */
   function displayHud(text) {
     const host =
@@ -200,18 +248,17 @@
       host.appendChild(hud);
     }
 
-    // Solid styling without backdrop-filter
     Object.assign(hud.style, {
       position: 'absolute',
-      top: '28px',
+      top: '30px',
       left: '50%',
       transform: 'translateX(-50%)',
-      backgroundColor: '#18181b',
-      border: '1px solid #3f3f46',
-      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.75)',
-      color: '#f4f4f5',
-      padding: '7px 16px',
-      borderRadius: '20px',
+      backgroundColor: '#0c0f18',
+      border: '1px solid rgba(255, 255, 255, 0.15)',
+      boxShadow: '0 8px 30px rgba(0, 0, 0, 0.8), 0 0 15px rgba(99, 102, 241, 0.3)',
+      color: '#f8fafc',
+      padding: '7px 18px',
+      borderRadius: '24px',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
       fontSize: '13px',
       fontWeight: '600',
@@ -220,18 +267,18 @@
       pointerEvents: 'none',
       display: 'flex',
       alignItems: 'center',
-      gap: '7px',
+      gap: '8px',
       opacity: '1',
       transition: 'opacity 0.2s ease, transform 0.2s ease'
     });
 
-    hud.innerHTML = `<span style="color:#60a5fa;">⛶</span><span>${text}</span>`;
+    hud.innerHTML = `<span style="color:#38bdf8; font-size: 14px;">⛶</span><span>${text}</span>`;
 
     if (hudTimeout) clearTimeout(hudTimeout);
     hudTimeout = setTimeout(() => {
       if (hud) {
         hud.style.opacity = '0';
-        hud.style.transform = 'translateX(-50%) translateY(-4px)';
+        hud.style.transform = 'translateX(-50%) translateY(-5px)';
         setTimeout(() => {
           if (hud && hud.parentElement) {
             hud.parentElement.removeChild(hud);
@@ -242,34 +289,50 @@
   }
 
   /**
-   * Listen to video metadata / play events
+   * Video Lifecycle Event Listeners
    */
-  function attachListeners(video) {
-    if (!video || video.__aspectFlowBound) return;
-    video.__aspectFlowBound = true;
+  function attachVideoListeners(video) {
+    if (!video || video.__aspectEventsBound) return;
+    video.__aspectEventsBound = true;
 
-    video.addEventListener('loadedmetadata', () => {
+    const onVideoReady = () => {
       if (activeState.mode !== 'reset') {
         applyTransform(false);
       }
-    });
+    };
 
-    video.addEventListener('play', () => {
-      if (activeState.mode !== 'reset') {
-        applyTransform(false);
-      }
-    });
+    video.addEventListener('loadedmetadata', onVideoReady);
+    video.addEventListener('loadeddata', onVideoReady);
+    video.addEventListener('canplay', onVideoReady);
+    video.addEventListener('play', onVideoReady);
+    video.addEventListener('playing', onVideoReady);
   }
 
   // Hook initial video
-  const initialVideo = findMainVideo();
-  if (initialVideo) attachListeners(initialVideo);
+  const initVideo = findMainVideo();
+  if (initVideo) {
+    attachVideoListeners(initVideo);
+    createVideoStyleLock(initVideo);
+  }
 
-  // Watch for dynamic video changes (SPA navigation like YouTube)
+  // Fullscreen event listeners (Handles entering & exiting fullscreen seamlessly)
+  const onFullscreenChange = () => {
+    if (activeState.mode !== 'reset') {
+      applyTransformStaged();
+    }
+  };
+
+  document.addEventListener('fullscreenchange', onFullscreenChange);
+  document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+  document.addEventListener('mozfullscreenchange', onFullscreenChange);
+  window.addEventListener('resize', onFullscreenChange);
+
+  // Watch for dynamic video changes & SPA navigations (YouTube next video / playlist)
   const domObserver = new MutationObserver(() => {
     const v = findMainVideo();
-    if (v && !v.__aspectFlowBound) {
-      attachListeners(v);
+    if (v && (!v.__aspectEventsBound || !v.__aspectStyleObserver)) {
+      attachVideoListeners(v);
+      createVideoStyleLock(v);
       if (activeState.mode !== 'reset') {
         applyTransform(false);
       }
@@ -281,23 +344,10 @@
     subtree: true
   });
 
-  // YouTube navigation event
+  // YouTube SPA event (yt-navigate-finish fires when navigating between videos)
   window.addEventListener('yt-navigate-finish', () => {
-    setTimeout(() => {
-      const v = findMainVideo();
-      if (v) {
-        attachListeners(v);
-        if (activeState.mode !== 'reset') {
-          applyTransform(false);
-        }
-      }
-    }, 300);
-  });
-
-  // Fullscreen change
-  document.addEventListener('fullscreenchange', () => {
     if (activeState.mode !== 'reset') {
-      setTimeout(() => applyTransform(false), 150);
+      applyTransformStaged();
     }
   });
 
@@ -328,6 +378,7 @@
         scaleY: 1.0
       };
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       return;
     }
 
@@ -340,6 +391,7 @@
         activeState = { mode: 'force-fill', targetRatio: null, scaleX: 1.0, scaleY: 1.0, label: 'Fit to Screen' };
       }
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       return;
     }
 
@@ -352,6 +404,7 @@
         activeState = { mode: 'fill', targetRatio: null, scaleX: 1.0, scaleY: 1.0, label: 'Zoom Fill' };
       }
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       return;
     }
 
@@ -360,6 +413,7 @@
       e.preventDefault();
       activeState = { mode: 'reset', targetRatio: null, scaleX: 1.0, scaleY: 1.0, label: 'Original' };
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       return;
     }
 
@@ -370,6 +424,7 @@
       activeState.scaleY = parseFloat(Math.min(2.5, (activeState.scaleY || 1.0) + 0.05).toFixed(2));
       activeState.label = `Height: ${activeState.scaleY.toFixed(2)}x`;
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       return;
     }
 
@@ -379,6 +434,7 @@
       activeState.scaleY = parseFloat(Math.max(0.5, (activeState.scaleY || 1.0) - 0.05).toFixed(2));
       activeState.label = `Height: ${activeState.scaleY.toFixed(2)}x`;
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       return;
     }
 
@@ -389,6 +445,7 @@
       activeState.scaleX = parseFloat(Math.min(2.5, (activeState.scaleX || 1.0) + 0.05).toFixed(2));
       activeState.label = `Width: ${activeState.scaleX.toFixed(2)}x`;
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       return;
     }
 
@@ -398,9 +455,21 @@
       activeState.scaleX = parseFloat(Math.max(0.5, (activeState.scaleX || 1.0) - 0.05).toFixed(2));
       activeState.label = `Width: ${activeState.scaleX.toFixed(2)}x`;
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       return;
     }
   });
+
+  function persistCurrentStateIfEnabled() {
+    if (sitePersistenceEnabled && currentDomain && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({
+        [`site_${currentDomain}`]: {
+          enabled: true,
+          state: activeState
+        }
+      });
+    }
+  }
 
   /**
    * Messaging from popup & background
@@ -438,7 +507,6 @@
         label: request.label || request.mode
       };
 
-      // Apply transform without showing HUD when triggered from popup
       const ok = applyTransform(false);
       sendResponse({ status: ok ? 'applied' : 'no_video' });
       return true;
@@ -453,12 +521,17 @@
         scaleY: 1.0
       };
       applyTransform(true);
+      persistCurrentStateIfEnabled();
       sendResponse({ status: 'cycled', preset: next });
       return true;
     }
 
     if (request.action === 'SET_PERSISTENCE') {
       sitePersistenceEnabled = !!request.persist;
+      if (request.persist && request.state) {
+        activeState = request.state;
+        applyTransformStaged();
+      }
       sendResponse({ status: 'ok' });
       return true;
     }
