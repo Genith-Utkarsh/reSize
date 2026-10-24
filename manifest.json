@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Universal Video Aspect Ratio & Resizer",
+  "version": "1.1.0",
+  "description": "Stretch, crop, zoom, or fit any HTML5 video to 16:10, 16:9, 21:9, 4:3, or custom aspect ratios.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ],
+  "commands": {
+    "cycle_ratio": {
+      "suggested_key": {
+        "default": "Alt+R"
+      },
+      "description": "Cycle through aspect ratio presets"
+    },
+    "reset_ratio": {
+      "suggested_key": {
+        "default": "Alt+Shift+0"
+      },
+      "description": "Reset video to original ratio"
+    },
+    "toggle_fit": {
+      "suggested_key": {
+        "default": "Alt+W"
+      },
+      "description": "Toggle 100% Fit to Player Container"
+    }
+  }
+}
